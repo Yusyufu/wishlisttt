@@ -18,6 +18,7 @@ import { TABS, type TabId, type WishItem, type WishlistState } from "@/lib/types
 import { INITIAL_STATE, loadState, saveState, newId } from "@/lib/storage";
 import { Dust } from "@/components/Dust";
 import { PetalBurst } from "@/components/Petals";
+import { MediaModal, type MediaItem } from "@/components/MediaModal";
 
 type View = "list" | "gallery";
 
@@ -29,6 +30,7 @@ export default function Page() {
   const [draft, setDraft] = useState("");
   const [petalTrigger, setPetalTrigger] = useState(0);
   const [tabBurst, setTabBurst] = useState<{ id: number; x: number } | null>(null);
+  const [modalItem, setModalItem] = useState<MediaItem | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -186,6 +188,15 @@ export default function Page() {
                           onDetachMedia={() =>
                             updateItem(activeTab, item.id, { image: null })
                           }
+                          onOpenMedia={() => {
+                            if (!item.image) return;
+                            setModalItem({
+                              src: item.image,
+                              text: item.text,
+                              story: item.story,
+                              tabLabel: TABS.find((t) => t.id === activeTab)?.label,
+                            });
+                          }}
                         />
                       ))
                     )}
@@ -202,7 +213,17 @@ export default function Page() {
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
               >
-                <Gallery items={galleryItems} />
+                <Gallery
+                  items={galleryItems}
+                  onOpenMedia={(it) =>
+                    setModalItem({
+                      src: it.image!,
+                      text: it.text,
+                      story: it.story,
+                      tabLabel: TABS.find((t) => t.id === it.tab)?.label,
+                    })
+                  }
+                />
               </motion.div>
             )}
           </AnimatePresence>
@@ -211,6 +232,7 @@ export default function Page() {
 
       <TabBurst burst={tabBurst} />
       <PetalBurst trigger={petalTrigger} />
+      <MediaModal item={modalItem} onClose={() => setModalItem(null)} />
     </div>
   );
 }
@@ -434,6 +456,7 @@ function WishRow({
   onStory,
   onAttachMedia,
   onDetachMedia,
+  onOpenMedia,
 }: {
   item: WishItem;
   onToggle: () => void;
@@ -442,6 +465,7 @@ function WishRow({
   onStory: (s: string) => void;
   onAttachMedia: (dataUrl: string) => void;
   onDetachMedia: () => void;
+  onOpenMedia: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [storyFocused, setStoryFocused] = useState(false);
@@ -650,7 +674,12 @@ function WishRow({
                       exit={{ opacity: 0, x: -6 }}
                       className="flex items-center gap-2"
                     >
-                      <div className="relative h-9 w-9 overflow-hidden border border-white/10 bg-black grayscale">
+                      <button
+                        type="button"
+                        onClick={onOpenMedia}
+                        className="group/thumb relative h-9 w-9 overflow-hidden border border-white/10 bg-black grayscale transition-all duration-500 hover:grayscale-0 focus:outline-none focus:ring-1 focus:ring-white/40"
+                        aria-label="View media"
+                      >
                         {isVideo ? (
                           <video
                             src={item.image}
@@ -672,7 +701,8 @@ function WishRow({
                             ▶
                           </span>
                         )}
-                      </div>
+                        <span className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-300 group-hover/thumb:bg-black/20" />
+                      </button>
                       <button
                         onClick={onDetachMedia}
                         className="text-[10px] uppercase tracking-[0.25em] text-neutral-500 hover:text-white"
@@ -695,8 +725,10 @@ function WishRow({
 
 function Gallery({
   items,
+  onOpenMedia,
 }: {
   items: (WishItem & { tab: TabId })[];
+  onOpenMedia: (it: WishItem & { tab: TabId }) => void;
 }) {
   return (
     <section className="pt-6">
@@ -728,12 +760,23 @@ function Gallery({
                 layout
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.98 }}
                 transition={{
                   delay: i * 0.04,
                   duration: 0.5,
                   ease: [0.22, 1, 0.36, 1],
                 }}
-                className="group flex flex-col"
+                onClick={() => onOpenMedia(it)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onOpenMedia(it);
+                  }
+                }}
+                className="group flex cursor-pointer flex-col focus:outline-none focus-visible:ring-1 focus-visible:ring-white/40"
               >
                 <div className="relative aspect-[3/4] w-full overflow-hidden border border-white/[0.06] bg-neutral-950">
                   {it.image ? (
