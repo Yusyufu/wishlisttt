@@ -358,11 +358,7 @@ function Header({
             <span className="font-sans text-[9px] font-medium uppercase tracking-[0.25em] text-neutral-500">
               Saving…
             </span>
-          ) : (
-            <span className="font-sans text-[9px] font-medium uppercase tracking-[0.25em] text-neutral-700">
-              Synced
-            </span>
-          )}
+          ) : null}
         </div>
         <button
           aria-label={
