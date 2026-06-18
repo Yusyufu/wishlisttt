@@ -2,14 +2,17 @@
 -- Creates the `wishes` table with a permissive RLS policy for personal use.
 
 create table if not exists public.wishes (
-  id         text primary key,
-  tab        text not null check (tab in ('kino', 'kita', 'vara')),
-  text       text not null,
-  completed  boolean not null default false,
-  expanded   boolean not null default false,
-  story      text not null default '',
-  image      text,
-  updated_at timestamptz not null default now()
+  id            text primary key,
+  tab           text not null check (tab in ('kino', 'kita', 'vara')),
+  text          text not null,
+  completed     boolean not null default false,
+  expanded      boolean not null default false,
+  story         text not null default '',
+  image         text,
+  updated_at    timestamptz not null default now(),
+  created_by    text not null default '',
+  created_at    timestamptz not null default now(),
+  completed_at  timestamptz
 );
 
 -- Add `expanded` column to existing tables (idempotent).

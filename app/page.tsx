@@ -23,6 +23,16 @@ import { Diagnostics, useTripleTap } from "@/components/Diagnostics";
 
 type View = "list" | "gallery";
 
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatCompletedDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+}
+
 export default function Page() {
   const [view, setView] = useState<View>("list");
   const [activeTab, setActiveTab] = useState<TabId>("kino");
@@ -105,11 +115,22 @@ export default function Page() {
   const addItem = () => {
     const text = draft.trim();
     if (!text) return;
+    const createdBy = activeTab === "kita" ? "kita" : activeTab;
     setItems((prev) => ({
       ...prev,
       [activeTab]: [
         ...prev[activeTab],
-        { id: newId(), text, completed: false, expanded: false, story: "", image: null },
+        {
+          id: newId(),
+          text,
+          completed: false,
+          expanded: false,
+          story: "",
+          image: null,
+          created_by: createdBy,
+          created_at: new Date().toISOString(),
+          completed_at: null,
+        },
       ],
     }));
     setDraft("");
@@ -128,6 +149,7 @@ export default function Page() {
       completed: willComplete,
       // Auto-open on completion, auto-close on uncheck
       expanded: willComplete,
+      completed_at: willComplete ? new Date().toISOString() : null,
     });
   };
 
@@ -216,6 +238,7 @@ export default function Page() {
                         <WishRow
                           key={item.id}
                           item={item}
+                          tab={activeTab}
                           onToggle={() => handleToggle(item.id)}
                           onToggleExpand={() => toggleExpand(item.id)}
                           onRemove={() => removeItem(activeTab, item.id)}
@@ -517,6 +540,7 @@ function InputBar({
 
 function WishRow({
   item,
+  tab,
   onToggle,
   onToggleExpand,
   onRemove,
@@ -526,6 +550,7 @@ function WishRow({
   onOpenMedia,
 }: {
   item: WishItem;
+  tab: TabId;
   onToggle: () => void;
   onToggleExpand: () => void;
   onRemove: () => void;
@@ -565,11 +590,11 @@ function WishRow({
       transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
       className="relative border-b border-white/[0.05]"
     >
-      <div className="group flex items-center gap-3 py-4">
+      <div className="group flex items-start gap-3 py-4">
         <button
           aria-label={item.completed ? "Mark incomplete" : "Mark complete"}
           onClick={onToggle}
-          className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center text-neutral-500 transition-all duration-500 hover:text-white active:scale-90"
+          className="relative mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center text-neutral-500 transition-all duration-500 hover:text-white active:scale-90"
         >
           {/* Ring pulse on complete */}
           {item.completed && (
@@ -612,51 +637,69 @@ function WishRow({
           </AnimatePresence>
         </button>
 
-        <motion.p
-          animate={{
-            color: item.completed ? "#525252" : "#fafafa",
-            opacity: item.completed ? 0.7 : 1,
-          }}
-          transition={{ duration: 0.5 }}
-          className={`flex-1 font-serif text-[17px] leading-snug ${
-            item.completed ? "line-through decoration-neutral-700" : ""
-          }`}
-        >
-          {item.text}
-        </motion.p>
+        <div className="flex flex-1 items-start gap-3">
+          <motion.p
+            animate={{
+              color: item.completed ? "#525252" : "#fafafa",
+              opacity: item.completed ? 0.7 : 1,
+            }}
+            transition={{ duration: 0.5 }}
+            className={`flex-1 font-serif text-[17px] leading-snug ${
+              item.completed ? "line-through decoration-neutral-700" : ""
+            }`}
+          >
+            {item.text}
+          </motion.p>
 
-        <button
-          aria-label="Delete"
-          onClick={onRemove}
-          className="opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-        >
-          <X className="h-3.5 w-3.5 text-neutral-600 hover:text-white" strokeWidth={1.25} />
-        </button>
+          <button
+            aria-label="Delete"
+            onClick={onRemove}
+            className="flex-shrink-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+          >
+            <X className="h-3.5 w-3.5 text-neutral-600 hover:text-white" strokeWidth={1.25} />
+          </button>
 
-        <AnimatePresence>
-          {item.completed && (
-            <motion.button
-              key="chevron"
-              initial={{ opacity: 0, width: 0 }}
-              animate={{ opacity: 1, width: "auto" }}
-              exit={{ opacity: 0, width: 0 }}
-              transition={{ duration: 0.3 }}
-              onClick={onToggleExpand}
-              aria-label={item.expanded ? "Collapse memory" : "Expand memory"}
-              aria-expanded={item.expanded}
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-neutral-500 transition-colors duration-300 hover:text-white"
-            >
-              <motion.span
-                animate={{ rotate: item.expanded ? 180 : 0 }}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-                className="inline-flex"
+          <AnimatePresence>
+            {item.completed && (
+              <motion.button
+                key="chevron"
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: "auto" }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.3 }}
+                onClick={onToggleExpand}
+                aria-label={item.expanded ? "Collapse memory" : "Expand memory"}
+                aria-expanded={item.expanded}
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center text-neutral-500 transition-colors duration-300 hover:text-white"
               >
-                <ChevronDown className="h-4 w-4" strokeWidth={1.5} />
-              </motion.span>
-            </motion.button>
-          )}
-        </AnimatePresence>
+                <motion.span
+                  animate={{ rotate: item.expanded ? 180 : 0 }}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                  className="inline-flex"
+                >
+                  <ChevronDown className="h-4 w-4" strokeWidth={1.5} />
+                </motion.span>
+              </motion.button>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
+
+      {/* Audit info: who created & when */}
+      {item.created_by && (
+        <div className="ml-8 pb-2">
+          <span className="font-sans text-[8px] uppercase tracking-[0.2em] text-neutral-600">
+            {item.created_by === "kita" ? "Kita" : item.created_by === "kino" ? "Kino" : "Vara"}
+            {" · "}
+            {formatDate(item.created_at)}
+          </span>
+          {item.completed && item.completed_at && (
+            <span className="ml-2 font-sans text-[8px] uppercase tracking-[0.2em] text-neutral-700">
+              ✓ {formatCompletedDate(item.completed_at)}
+            </span>
+          )}
+        </div>
+      )}
 
       <AnimatePresence initial={false}>
         {item.completed && item.expanded && (

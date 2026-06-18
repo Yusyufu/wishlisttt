@@ -1,4 +1,4 @@
-import type { TabId, WishItem, WishlistState } from "./types";
+import type { TabId, WishItem, WishlistState, CreatedBy } from "./types";
 import { supabase, isSupabaseConfigured } from "./supabase";
 
 export const newId = () =>
@@ -13,6 +13,9 @@ type Row = {
   completed: boolean;
   story: string;
   image: string | null;
+  created_by: CreatedBy;
+  created_at: string;
+  completed_at: string | null;
 };
 
 function emptyState(): WishlistState {
@@ -32,6 +35,9 @@ function rowsToState(rows: Row[]): WishlistState {
       expanded: (r as any).expanded ?? r.completed,
       story: r.story ?? "",
       image: r.image,
+      created_by: r.created_by ?? "",
+      created_at: r.created_at ?? new Date().toISOString(),
+      completed_at: r.completed_at ?? null,
     });
   }
   return state;
@@ -39,7 +45,17 @@ function rowsToState(rows: Row[]): WishlistState {
 
 function stateToRows(state: WishlistState): Row[] {
   return (Object.keys(state) as TabId[]).flatMap((tab) =>
-    state[tab].map((it) => ({ ...it, tab }))
+    state[tab].map((it) => ({
+      id: it.id,
+      tab,
+      text: it.text,
+      completed: it.completed,
+      story: it.story,
+      image: it.image,
+      created_by: it.created_by,
+      created_at: it.created_at,
+      completed_at: it.completed_at,
+    }))
   );
 }
 
