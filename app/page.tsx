@@ -54,12 +54,30 @@ export default function Page() {
   }, []);
 
   // Persist any change to Supabase.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
   useEffect(() => {
     if (!hydrated) return;
     if (loadError) return;
-    saveState(items).catch((e) =>
-      console.error("[supabase] save failed:", e instanceof Error ? e.message : e)
-    );
+    if (items.kino.length === 0 && items.kita.length === 0 && items.vara.length === 0) {
+      // Don't bother saving an empty state — would just churn.
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    saveState(items)
+      .then(() => {
+        // eslint-disable-next-line no-console
+        console.log("[supabase] save ok");
+      })
+      .catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        // eslint-disable-next-line no-console
+        console.error("[supabase] save failed:", msg);
+        setSaveError(msg);
+      })
+      .finally(() => setSaving(false));
   }, [items, hydrated, loadError]);
 
   const currentItems = items[activeTab];
@@ -153,6 +171,8 @@ export default function Page() {
           view={view}
           onToggleView={() => setView((v) => (v === "list" ? "gallery" : "list"))}
           onHeartTripleTap={onHeartTripleTap}
+          saving={saving}
+          saveError={saveError}
         />
 
         <div className="relative z-10 flex-1 px-5 pb-24">
@@ -264,10 +284,14 @@ function Header({
   view,
   onToggleView,
   onHeartTripleTap,
+  saving,
+  saveError,
 }: {
   view: View;
   onToggleView: () => void;
   onHeartTripleTap: (e: React.MouseEvent) => void;
+  saving: boolean;
+  saveError: string | null;
 }) {
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-black/70 backdrop-blur-md">
@@ -321,6 +345,24 @@ function Header({
               }
             }
           `}</style>
+        </div>
+        <div className="flex items-center gap-2">
+          {saveError ? (
+            <span
+              className="font-sans text-[9px] font-medium uppercase tracking-[0.25em] text-red-400"
+              title={saveError}
+            >
+              Save failed
+            </span>
+          ) : saving ? (
+            <span className="font-sans text-[9px] font-medium uppercase tracking-[0.25em] text-neutral-500">
+              Saving…
+            </span>
+          ) : (
+            <span className="font-sans text-[9px] font-medium uppercase tracking-[0.25em] text-neutral-700">
+              Synced
+            </span>
+          )}
         </div>
         <button
           aria-label={
