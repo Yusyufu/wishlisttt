@@ -27,6 +27,8 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState<TabId>("kino");
   const [items, setItems] = useState<WishlistState>(INITIAL_STATE);
   const [hydrated, setHydrated] = useState(false);
+  const [loadedFromCloud, setLoadedFromCloud] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [draft, setDraft] = useState("");
   const [petalTrigger, setPetalTrigger] = useState(0);
   const [tabBurst, setTabBurst] = useState<{ id: number; x: number } | null>(null);
@@ -34,9 +36,10 @@ export default function Page() {
 
   useEffect(() => {
     let mounted = true;
-    loadState().then((state) => {
+    loadState().then(({ state, fromCloud }) => {
       if (mounted) {
         setItems(state);
+        setLoadedFromCloud(fromCloud);
         setHydrated(true);
       }
     });
@@ -46,8 +49,20 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
-    if (hydrated) saveState(items);
-  }, [items, hydrated]);
+    if (!hydrated) return;
+    // Mirror to Supabase only if we loaded from cloud OR the user has
+    // explicitly mutated state in this session. This prevents a fresh
+    // device (with empty localStorage) from pushing its seed/dummy data
+    // up to Supabase and overwriting the real shared state.
+    saveState(items, { allowCloud: loadedFromCloud || dirty });
+  }, [items, hydrated, loadedFromCloud, dirty]);
+
+  // Helper: mark dirty + update state in one shot, so any user action
+  // makes subsequent saves eligible to go to the cloud.
+  const mutate = (updater: (prev: WishlistState) => WishlistState) => {
+    setItems((prev) => updater(prev));
+    setDirty(true);
+  };
 
   const currentItems = items[activeTab];
 
@@ -65,7 +80,7 @@ export default function Page() {
     id: string,
     patch: Partial<WishItem>
   ) => {
-    setItems((prev) => ({
+    mutate((prev) => ({
       ...prev,
       [tab]: prev[tab].map((it) => (it.id === id ? { ...it, ...patch } : it)),
     }));
@@ -74,7 +89,7 @@ export default function Page() {
   const addItem = () => {
     const text = draft.trim();
     if (!text) return;
-    setItems((prev) => ({
+    mutate((prev) => ({
       ...prev,
       [activeTab]: [
         ...prev[activeTab],
@@ -85,7 +100,7 @@ export default function Page() {
   };
 
   const removeItem = (tab: TabId, id: string) => {
-    setItems((prev) => ({ ...prev, [tab]: prev[tab].filter((it) => it.id !== id) }));
+    mutate((prev) => ({ ...prev, [tab]: prev[tab].filter((it) => it.id !== id) }));
   };
 
   const handleToggle = (id: string) => {
@@ -104,7 +119,7 @@ export default function Page() {
     const current = items[activeTab].find((i) => i.id === id);
     if (!current) return;
     const willOpen = !current.expanded;
-    setItems((prev) => ({
+    mutate((prev) => ({
       ...prev,
       [activeTab]: prev[activeTab].map((it) =>
         it.id === id

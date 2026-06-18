@@ -105,8 +105,13 @@ function stateToRows(state: WishlistState): Row[] {
  * 1. Supabase (if configured) — source of truth
  * 2. localStorage cache (offline / first-visit fallback)
  * 3. INITIAL_STATE (seed) — only when nothing exists anywhere
+ *
+ * Returns `{ state, fromCloud }` so the caller knows whether the
+ * current view originated from the shared source or from local-only
+ * data. This is critical to prevent a fresh device from uploading
+ * its seed/dummy state and clobbering the real shared state.
  */
-export async function loadState(): Promise<WishlistState> {
+export async function loadState(): Promise<{ state: WishlistState; fromCloud: boolean }> {
   if (supabase) {
     try {
       const result = await Promise.race([
@@ -124,24 +129,36 @@ export async function loadState(): Promise<WishlistState> {
       } else if (data && data.length > 0) {
         const state = rowsToState(data);
         lsWrite(state);
-        return state;
+        return { state, fromCloud: true };
+      } else if (data) {
+        // Empty cloud DB — use empty state but mark as fromCloud so
+        // the user can start adding items and they'll sync.
+        return { state: { kino: [], kita: [], vara: [] }, fromCloud: true };
       }
     } catch (e) {
       console.warn("[supabase] load failed, falling back to local:", e);
     }
   }
   const cached = lsRead();
-  if (cached) return cached;
-  return INITIAL_STATE;
+  if (cached) return { state: cached, fromCloud: false };
+  return { state: INITIAL_STATE, fromCloud: false };
 }
 
 /**
  * Push the full state to Supabase (upsert + delete missing).
  * Also mirrors to localStorage for offline reads.
+ *
+ * @param allowCloud  If false, skip the Supabase write. Used to prevent
+ *                    a fresh device from overwriting shared state with
+ *                    its own local/seed data.
  */
-export async function saveState(state: WishlistState): Promise<void> {
+export async function saveState(
+  state: WishlistState,
+  opts: { allowCloud?: boolean } = {}
+): Promise<void> {
   lsWrite(state);
   if (!supabase) return;
+  if (opts.allowCloud === false) return;
 
   const rows = stateToRows(state);
   // Upsert all current rows
