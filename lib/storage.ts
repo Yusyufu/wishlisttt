@@ -1,63 +1,8 @@
 import type { TabId, WishItem, WishlistState } from "./types";
 import { supabase, isSupabaseConfigured } from "./supabase";
 
-/* ------------------------- Dummy / fallback seed ------------------------- */
-
-export const INITIAL_STATE: WishlistState = {
-  kino: [
-    { id: "seed-k1", text: "Nonton live Pierce the Veil di barisan paling depan", completed: false, expanded: false, story: "", image: null },
-    { id: "seed-k2", text: "Lengkapi koleksi vinyl Saosin", completed: false, expanded: false, story: "", image: null },
-  ],
-  kita: [
-    {
-      id: "seed-b1",
-      text: "Co-op main Elden Ring / Dark Souls berdua sampai namatin DLC-nya",
-      completed: true,
-      expanded: true,
-      story: "Mati puluhan kali lawan boss, tapi akhirnya menang juga malam ini.",
-      image: null,
-    },
-    { id: "seed-b2", text: "Tattoo bareng dengan desain minimalist gothic", completed: false, expanded: false, story: "", image: null },
-  ],
-  vara: [
-    { id: "seed-v1", text: "Bikin matching DIY chain bracelet & necklace berdua", completed: false, expanded: false, story: "", image: null },
-  ],
-};
-
 export const newId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-/* ------------------------- localStorage (offline cache) ------------------------- */
-
-const LS_KEY = "our-journey:v1";
-
-function lsRead(): WishlistState | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(LS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as WishlistState;
-    // Backfill `expanded` for items written by older versions.
-    for (const tab of Object.keys(parsed) as TabId[]) {
-      parsed[tab] = (parsed[tab] ?? []).map((it) => ({
-        ...it,
-        expanded: it.expanded ?? it.completed,
-      }));
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function lsWrite(state: WishlistState) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(LS_KEY, JSON.stringify(state));
-  } catch {
-    /* ignore */
-  }
-}
 
 /* ------------------------- Supabase row helpers ------------------------- */
 
@@ -101,85 +46,64 @@ function stateToRows(state: WishlistState): Row[] {
 /* ------------------------- Public API ------------------------- */
 
 /**
- * Load wishlist. Order of resolution:
- * 1. Supabase (if configured) — source of truth
- * 2. localStorage cache (offline / first-visit fallback)
- * 3. INITIAL_STATE (seed) — only when nothing exists anywhere
- *
- * Returns `{ state, fromCloud }` so the caller knows whether the
- * current view originated from the shared source or from local-only
- * data. This is critical to prevent a fresh device from uploading
- * its seed/dummy state and clobbering the real shared state.
+ * Load wishlist from Supabase (single source of truth).
+ * Throws if Supabase is unreachable or returns an error.
  */
-export async function loadState(): Promise<{ state: WishlistState; fromCloud: boolean }> {
-  if (supabase) {
-    try {
-      const result = await Promise.race([
-        supabase.from("wishes").select("*").order("updated_at", { ascending: true }),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("supabase timeout")), 5000)
-        ),
-      ]);
-      const { data, error } = result as {
-        data: Row[] | null;
-        error: { message: string } | null;
-      };
-      if (error) {
-        console.warn("[supabase] load error, falling back to local:", error.message);
-      } else if (data && data.length > 0) {
-        const state = rowsToState(data);
-        lsWrite(state);
-        return { state, fromCloud: true };
-      } else if (data) {
-        // Empty cloud DB — use empty state but mark as fromCloud so
-        // the user can start adding items and they'll sync.
-        return { state: { kino: [], kita: [], vara: [] }, fromCloud: true };
-      }
-    } catch (e) {
-      console.warn("[supabase] load failed, falling back to local:", e);
-    }
+export async function loadState(): Promise<WishlistState> {
+  if (!supabase) {
+    throw new Error("Supabase not configured (missing env vars)");
   }
-  const cached = lsRead();
-  if (cached) return { state: cached, fromCloud: false };
-  return { state: INITIAL_STATE, fromCloud: false };
+  const result = await Promise.race([
+    supabase.from("wishes").select("*").order("updated_at", { ascending: true }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("supabase timeout")), 8000)
+    ),
+  ]);
+  const { data, error } = result as {
+    data: Row[] | null;
+    error: { message: string } | null;
+  };
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return emptyState();
+  return rowsToState(data);
 }
 
 /**
  * Push the full state to Supabase (upsert + delete missing).
- * Also mirrors to localStorage for offline reads.
- *
- * @param allowCloud  If false, skip the Supabase write. Used to prevent
- *                    a fresh device from overwriting shared state with
- *                    its own local/seed data.
  */
-export async function saveState(
-  state: WishlistState,
-  opts: { allowCloud?: boolean } = {}
-): Promise<void> {
-  lsWrite(state);
-  if (!supabase) return;
-  if (opts.allowCloud === false) return;
+export async function saveState(state: WishlistState): Promise<void> {
+  if (!supabase) {
+    throw new Error("Supabase not configured (missing env vars)");
+  }
 
   const rows = stateToRows(state);
-  // Upsert all current rows
   const { error: upErr } = await supabase
     .from("wishes")
     .upsert(rows, { onConflict: "id" });
-  if (upErr) {
-    console.error("[supabase] upsert failed:", upErr.message);
-    return;
-  }
+  if (upErr) throw new Error(upErr.message);
 
-  // Delete rows that no longer exist
   const ids = rows.map((r) => r.id);
   const { data: existing, error: selErr } = await supabase
     .from("wishes")
     .select("id");
-  if (selErr) return;
+  if (selErr) throw new Error(selErr.message);
   const toDelete = (existing ?? [])
     .map((r) => r.id)
     .filter((id) => !ids.includes(id));
   if (toDelete.length > 0) {
-    await supabase.from("wishes").delete().in("id", toDelete);
+    const { error: delErr } = await supabase
+      .from("wishes")
+      .delete()
+      .in("id", toDelete);
+    if (delErr) throw new Error(delErr.message);
   }
+}
+
+/**
+ * Delete a single wish by id (used by diagnostics for self-tests).
+ */
+export async function deleteOne(id: string): Promise<void> {
+  if (!supabase) throw new Error("Supabase not configured");
+  const { error } = await supabase.from("wishes").delete().eq("id", id);
+  if (error) throw new Error(error.message);
 }

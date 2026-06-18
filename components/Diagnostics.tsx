@@ -157,8 +157,7 @@ export function Diagnostics({
   };
 
   const clearLocal = () => {
-    localStorage.removeItem("our-journey:v1");
-    log("info", "localStorage cleared (reload to re-fetch)");
+    log("info", "localStorage no longer used in this build");
   };
 
   return (

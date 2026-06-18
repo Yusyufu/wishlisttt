@@ -15,7 +15,7 @@ A gothic-romantic couples wishlist & memory keeper. Mobile-first, serverless, mo
 - 2-column gallery (grayscale → color on hover)
 - Inline gothic SVG placeholder for items without media
 - Effects: dust particles, heartbeat pulse, text shimmer, petal confetti, tab burst ripple, ring pulse, chevron rotate
-- Supabase persistence with localStorage offline cache
+- Supabase persistence (single source of truth, no localStorage cache)
 
 ---
 

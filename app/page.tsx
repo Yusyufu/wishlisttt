@@ -15,7 +15,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { TABS, type TabId, type WishItem, type WishlistState } from "@/lib/types";
-import { INITIAL_STATE, loadState, saveState, newId } from "@/lib/storage";
+import { loadState, saveState, newId } from "@/lib/storage";
 import { Dust } from "@/components/Dust";
 import { PetalBurst } from "@/components/Petals";
 import { MediaModal, type MediaItem } from "@/components/MediaModal";
@@ -26,10 +26,9 @@ type View = "list" | "gallery";
 export default function Page() {
   const [view, setView] = useState<View>("list");
   const [activeTab, setActiveTab] = useState<TabId>("kino");
-  const [items, setItems] = useState<WishlistState>(INITIAL_STATE);
+  const [items, setItems] = useState<WishlistState>({ kino: [], kita: [], vara: [] });
   const [hydrated, setHydrated] = useState(false);
-  const [loadedFromCloud, setLoadedFromCloud] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [petalTrigger, setPetalTrigger] = useState(0);
   const [tabBurst, setTabBurst] = useState<{ id: number; x: number } | null>(null);
@@ -37,35 +36,31 @@ export default function Page() {
   const [diagOpen, setDiagOpen] = useState(false);
   const onHeartTripleTap = useTripleTap(() => setDiagOpen(true));
 
+  const refresh = async () => {
+    setHydrated(false);
+    setLoadError(null);
+    try {
+      const state = await loadState();
+      setItems(state);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setHydrated(true);
+    }
+  };
+
   useEffect(() => {
-    let mounted = true;
-    loadState().then(({ state, fromCloud }) => {
-      if (mounted) {
-        setItems(state);
-        setLoadedFromCloud(fromCloud);
-        setHydrated(true);
-      }
-    });
-    return () => {
-      mounted = false;
-    };
+    refresh();
   }, []);
 
+  // Persist any change to Supabase.
   useEffect(() => {
     if (!hydrated) return;
-    // Mirror to Supabase only if we loaded from cloud OR the user has
-    // explicitly mutated state in this session. This prevents a fresh
-    // device (with empty localStorage) from pushing its seed/dummy data
-    // up to Supabase and overwriting the real shared state.
-    saveState(items, { allowCloud: loadedFromCloud || dirty });
-  }, [items, hydrated, loadedFromCloud, dirty]);
-
-  // Helper: mark dirty + update state in one shot, so any user action
-  // makes subsequent saves eligible to go to the cloud.
-  const mutate = (updater: (prev: WishlistState) => WishlistState) => {
-    setItems((prev) => updater(prev));
-    setDirty(true);
-  };
+    if (loadError) return;
+    saveState(items).catch((e) =>
+      console.error("[supabase] save failed:", e instanceof Error ? e.message : e)
+    );
+  }, [items, hydrated, loadError]);
 
   const currentItems = items[activeTab];
 
@@ -83,7 +78,7 @@ export default function Page() {
     id: string,
     patch: Partial<WishItem>
   ) => {
-    mutate((prev) => ({
+    setItems((prev) => ({
       ...prev,
       [tab]: prev[tab].map((it) => (it.id === id ? { ...it, ...patch } : it)),
     }));
@@ -92,7 +87,7 @@ export default function Page() {
   const addItem = () => {
     const text = draft.trim();
     if (!text) return;
-    mutate((prev) => ({
+    setItems((prev) => ({
       ...prev,
       [activeTab]: [
         ...prev[activeTab],
@@ -103,7 +98,7 @@ export default function Page() {
   };
 
   const removeItem = (tab: TabId, id: string) => {
-    mutate((prev) => ({ ...prev, [tab]: prev[tab].filter((it) => it.id !== id) }));
+    setItems((prev) => ({ ...prev, [tab]: prev[tab].filter((it) => it.id !== id) }));
   };
 
   const handleToggle = (id: string) => {
@@ -122,7 +117,7 @@ export default function Page() {
     const current = items[activeTab].find((i) => i.id === id);
     if (!current) return;
     const willOpen = !current.expanded;
-    mutate((prev) => ({
+    setItems((prev) => ({
       ...prev,
       [activeTab]: prev[activeTab].map((it) =>
         it.id === id
@@ -139,6 +134,9 @@ export default function Page() {
 
       <AnimatePresence>
         {!hydrated && <LoadingSplash />}
+      </AnimatePresence>
+      <AnimatePresence>
+        {hydrated && loadError && <ErrorSplash message={loadError} onRetry={refresh} />}
       </AnimatePresence>
 
       <div className="relative mx-auto flex min-h-screen max-w-md flex-col border-x border-neutral-900 shadow-[0_0_80px_-20px_rgba(255,255,255,0.06)] sm:max-w-lg">
@@ -960,6 +958,40 @@ function GothicPlaceholder({ seed }: { seed: string }) {
 }
 
 /* ----------------------------- Loading splash ----------------------------- */
+
+function ErrorSplash({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  return (
+    <motion.div
+      key="error"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.3 }}
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-[#050505]/95 backdrop-blur-md"
+    >
+      <div className="max-w-xs px-6 text-center">
+        <p className="font-serif text-lg italic text-neutral-300">
+          Can’t reach the archive.
+        </p>
+        <p className="mt-2 font-sans text-[10px] uppercase tracking-[0.3em] text-neutral-500">
+          {message}
+        </p>
+        <button
+          onClick={onRetry}
+          className="mt-6 border border-white/20 px-4 py-2 font-sans text-[10px] font-medium uppercase tracking-[0.3em] text-white transition-all duration-300 hover:border-white"
+        >
+          Retry
+        </button>
+      </div>
+    </motion.div>
+  );
+}
 
 function LoadingSplash() {
   return (
