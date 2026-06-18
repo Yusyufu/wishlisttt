@@ -19,6 +19,7 @@ import { INITIAL_STATE, loadState, saveState, newId } from "@/lib/storage";
 import { Dust } from "@/components/Dust";
 import { PetalBurst } from "@/components/Petals";
 import { MediaModal, type MediaItem } from "@/components/MediaModal";
+import { Diagnostics, useTripleTap } from "@/components/Diagnostics";
 
 type View = "list" | "gallery";
 
@@ -33,6 +34,8 @@ export default function Page() {
   const [petalTrigger, setPetalTrigger] = useState(0);
   const [tabBurst, setTabBurst] = useState<{ id: number; x: number } | null>(null);
   const [modalItem, setModalItem] = useState<MediaItem | null>(null);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const onHeartTripleTap = useTripleTap(() => setDiagOpen(true));
 
   useEffect(() => {
     let mounted = true;
@@ -148,7 +151,11 @@ export default function Page() {
           }}
         />
 
-        <Header view={view} onToggleView={() => setView((v) => (v === "list" ? "gallery" : "list"))} />
+        <Header
+          view={view}
+          onToggleView={() => setView((v) => (v === "list" ? "gallery" : "list"))}
+          onHeartTripleTap={onHeartTripleTap}
+        />
 
         <div className="relative z-10 flex-1 px-5 pb-24">
           <AnimatePresence mode="wait">
@@ -248,13 +255,22 @@ export default function Page() {
       <TabBurst burst={tabBurst} />
       <PetalBurst trigger={petalTrigger} />
       <MediaModal item={modalItem} onClose={() => setModalItem(null)} />
+      <Diagnostics open={diagOpen} onClose={() => setDiagOpen(false)} />
     </div>
   );
 }
 
 /* ----------------------------- Header ----------------------------- */
 
-function Header({ view, onToggleView }: { view: View; onToggleView: () => void }) {
+function Header({
+  view,
+  onToggleView,
+  onHeartTripleTap,
+}: {
+  view: View;
+  onToggleView: () => void;
+  onHeartTripleTap: (e: React.MouseEvent) => void;
+}) {
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-black/70 backdrop-blur-md">
       <div className="flex items-center justify-between px-5 py-4">
@@ -978,3 +994,4 @@ function LoadingSplash() {
     </motion.div>
   );
 }
+
